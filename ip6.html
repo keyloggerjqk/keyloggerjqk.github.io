@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ghi chú Online — Tương thích iOS 12 (hash URL)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+  <!-- CryptoJS (fallback mã hoá/giải mã cho thiết bị cũ, không dùng WebCrypto) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+  <style>
+    :root { --ring: 0 0 0 3px rgba(59,130,246,.4); }
+    * { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji" }
+    a { color: #2563eb; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div class="max-w-5xl mx-auto p-4 sm:p-6">
+    <header class="flex items-center justify-between gap-3">
+      <h1 class="text-2xl sm:text-3xl font-bold">🗒️ Ghi chú Online (tương thích iOS 12)</h1>
+      <a class="text-sm text-blue-600 hover:underline" href="#" id="resetLink">Tạo ghi chú mới</a>
+    </header>
+
+    <section class="mt-4 grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div class="xl:col-span-2 space-y-4">
+        <div class="bg-white rounded-2xl shadow p-4 sm:p-5">
+          <label for="title" class="block text-sm font-medium text-slate-600">Tiêu đề (tuỳ chọn)</label>
+          <input id="title" type="text" placeholder="Ví dụ: Danh sách việc cần làm" class="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 outline-none focus:ring-[var(--ring)]">
+
+          <div class="mt-4">
+            <div class="flex items-center justify-between mb-1">
+              <label for="note" class="block text-sm font-medium text-slate-600">Nội dung ghi chú</label>
+              <span id="stats" class="text-xs text-slate-500">0 ký tự</span>
+            </div>
+            <textarea id="note" rows="10" placeholder="Nhập ghi chú…" class="w-full rounded-2xl border border-slate-200 px-3 py-3 outline-none focus:ring-[var(--ring)] resize-y"></textarea>
+          </div>
+
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <label class="block">
+              <span class="text-sm font-medium text-slate-600">Mật khẩu (tuỳ chọn)</span>
+              <input id="password" type="password" placeholder="Đặt mật khẩu để mã hoá (chế độ tương thích)" class="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 outline-none focus:ring-[var(--ring)]">
+              <p class="mt-1 text-xs text-slate-500">Chế độ tương thích dùng CryptoJS AES‑CBC + HMAC (chạy trên iOS 12).</p>
+            </label>
+            <label class="flex items-center gap-2 mt-6 sm:mt-0 select-none">
+              <input id="requirePw" type="checkbox" class="h-4 w-4 rounded border-slate-300">
+              <span class="text-sm text-slate-700">Yêu cầu mật khẩu khi xem (tương thích)</span>
+            </label>
+          </div>
+
+          <div class="mt-4">
+            <div class="flex items-center justify-between mb-1">
+              <span class="block text-sm font-medium text-slate-600">Xem nhanh (bấm vào link để mở)</span>
+              <span class="text-xs text-slate-500">Tự động cập nhật khi bạn gõ</span>
+            </div>
+            <div id="preview" class="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm whitespace-pre-wrap break-words leading-6"></div>
+          </div>
+
+          <div id="editorActions" class="mt-4 flex flex-wrap items-center gap-2">
+            <button id="saveBtn" class="inline-flex items-center gap-2 rounded-full text-white px-5 py-3 text-lg font-semibold shadow bg-blue-600">💾 Lưu & tạo link + QR</button>
+            <button id="downloadTxtBtn" class="inline-flex items-center gap-2 rounded-full bg-slate-800 text-white px-5 py-3 text-base font-medium shadow">⬇️ Tải .txt</button>
+            <button id="clearBtn" class="inline-flex items-center gap-2 rounded-full bg-slate-200 text-slate-800 px-5 py-3 text-base font-medium">🧹 Xoá</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="bg-white rounded-2xl shadow p-4 sm:p-5 space-y-3">
+          <h2 class="text-lg font-semibold">🔗 Link & QR</h2>
+
+          <div>
+            <label class="text-sm text-slate-600">URL dài (chứa <code>#hash</code>)</label>
+            <div class="mt-1 flex gap-2">
+              <input id="longLink" readonly class="flex-1 rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none select-all" placeholder="Sẽ hiển thị sau khi Lưu" />
+              <button id="copyLongBtn" class="rounded-full bg-slate-700 text-white px-3 py-2 text-sm font-medium">Copy</button>
+              <button id="openLongBtn" class="rounded-full bg-slate-200 text-slate-800 px-3 py-2 text-sm font-medium">Mở</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="text-sm text-slate-600">Link rút gọn</label>
+            <div class="mt-1 flex gap-2">
+              <input id="shortLink" readonly class="flex-1 rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none select-all" placeholder="Chưa có — nhấn “Lưu & tạo link + QR”" />
+              <button id="copyBtn" class="rounded-full bg-slate-800 text-white px-3 py-2 text-sm font-medium">Sao chép</button>
+            </div>
+          </div>
+
+          <div class="grid place-items-center">
+            <img id="qrImg" alt="QR code" class="w-56 h-56 bg-slate-100 rounded-2xl object-contain border border-slate-200" />
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button id="downloadQRBtn" class="rounded-full bg-slate-800 text-white px-3 py-2 text-sm font-medium">Tải ảnh QR</button>
+            <button id="shareBtn" class="rounded-full bg-blue-600 text-white px-3 py-2 text-sm font-medium hidden">Chia sẻ</button>
+          </div>
+        </div>
+
+        <div id="decryptBox" class="hidden mt-4 bg-white rounded-2xl shadow p-4 sm:p-5 space-y-2">
+          <h3 class="font-semibold">🔐 Ghi chú đã mã hoá — nhập mật khẩu để xem</h3>
+          <input id="viewPw" type="password" class="w-full rounded-2xl border border-slate-200 px-3 py-2 outline-none" placeholder="Nhập mật khẩu…" />
+          <button id="decryptBtn" class="rounded-full bg-blue-600 text-white px-4 py-2 text-sm font-semibold">Giải mã</button>
+          <p id="decMsg" class="text-xs text-red-600"></p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="mt-6 text-center text-xs text-slate-500">© <span id="y"></span> Ghi chú Online</footer>
+    <div id="msgBox" class="fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow hidden"></div>
+  </div>
+
+  <script>
+    // ======= Helpers chung (không dùng replaceAll hoặc optional chaining) =======
+    function $(s){ return document.querySelector(s); }
+    var titleEl = $('#title');
+    var noteEl = $('#note');
+    var statsEl = $('#stats');
+    var saveBtn = $('#saveBtn');
+    var shortLinkEl = $('#shortLink');
+    var copyBtn = $('#copyBtn');
+    var qrImg = $('#qrImg');
+    var downloadQRBtn = $('#downloadQRBtn');
+    var downloadTxtBtn = $('#downloadTxtBtn');
+    var resetLink = $('#resetLink');
+    var shareBtn = $('#shareBtn');
+    var previewEl = $('#preview');
+    var editorActions = $('#editorActions');
+    var longLinkEl = $('#longLink');
+    var copyLongBtn = $('#copyLongBtn');
+    var openLongBtn = $('#openLongBtn');
+    var passwordEl = $('#password');
+    var requirePwEl = $('#requirePw');
+    var decryptBox = $('#decryptBox');
+    var viewPwEl = $('#viewPw');
+    var decryptBtn = $('#decryptBtn');
+    var decMsg = $('#decMsg');
+    $('#y').textContent = new Date().getFullYear();
+
+    function showMsg(text, type){
+      var box = document.getElementById('msgBox');
+      box.textContent = text;
+      box.className = 'fixed top-4 right-4 px-4 py-2 rounded-lg shadow text-white ' + (type==='success' ? 'bg-green-600' : 'bg-red-500');
+      box.classList.remove('hidden');
+      setTimeout(function(){ box.classList.add('hidden'); }, 4000);
+    }
+
+    function updateStats(){ var len = (noteEl.value||'').length; statsEl.textContent = len.toLocaleString('vi-VN') + ' ký tự'; }
+    function escapeHTML(s){ return (s||'').replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]; }); }
+    function linkify(text){ return escapeHTML(text).replace(/(https?:\/\/[^\s]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer">$1<\/a>'); }
+    function updatePreview(){ previewEl.innerHTML = linkify(noteEl.value || ''); }
+
+    // ======= CryptoJS (tương thích iOS 12) =======
+    function b64uEnc(str){ return str.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+    function b64uDec(str){ str = str.replace(/\-/g,'+').replace(/_/g,'/'); var pad = str.length % 4; if(pad) str += '='.repeat(4-pad); return str; }
+
+    function encryptCompat(obj, password){
+      // AES-CBC + HMAC-SHA256 (Encrypt-then-MAC), khoá dẫn xuất PBKDF2(100k)
+      var json = JSON.stringify(obj);
+      var salt = CryptoJS.lib.WordArray.random(16);
+      var iv   = CryptoJS.lib.WordArray.random(16);
+      var key  = CryptoJS.PBKDF2(password, salt, { keySize: 32/4, iterations: 100000, hasher: CryptoJS.algo.SHA256 });
+      var cipher = CryptoJS.AES.encrypt(json, key, { iv: iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 });
+      var mac = CryptoJS.HmacSHA256(salt.concat(iv).concat(cipher.ciphertext), key);
+      return {
+        v:1, e:1, a:'cbc',
+        s: b64uEnc(CryptoJS.enc.Base64.stringify(salt)),
+        i: b64uEnc(CryptoJS.enc.Base64.stringify(iv)),
+        c: b64uEnc(CryptoJS.enc.Base64.stringify(cipher.ciphertext)),
+        m: b64uEnc(CryptoJS.enc.Base64.stringify(mac))
+      };
+    }
+
+    function decryptCompat(pkg, password){
+      function fromB64u(u){ return CryptoJS.enc.Base64.parse(b64uDec(u)); }
+      var salt = fromB64u(pkg.s), iv = fromB64u(pkg.i), c = fromB64u(pkg.c), m = fromB64u(pkg.m);
+      var key  = CryptoJS.PBKDF2(password, salt, { keySize: 32/4, iterations: 100000, hasher: CryptoJS.algo.SHA256 });
+      var mac2 = CryptoJS.HmacSHA256(salt.concat(iv).concat(c), key);
+      if(CryptoJS.enc.Base64.stringify(mac2) !== CryptoJS.enc.Base64.stringify(m)) throw new Error('MAC sai');
+      var dec = CryptoJS.AES.decrypt({ciphertext: c}, key, { iv: iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 });
+      return JSON.parse(CryptoJS.enc.Utf8.stringify(dec));
+    }
+
+    function buildLongURL(callback){
+      var data = { t: titleEl.value || '', n: noteEl.value || '' };
+      var needEnc = requirePwEl.checked && (passwordEl.value||'').length > 0;
+      var base = location.origin + location.pathname;
+      if(needEnc){
+        var pkg = encryptCompat(data, passwordEl.value);
+        callback(base + '#n=' + encodeURIComponent(JSON.stringify(pkg)));
+      } else {
+        var packed = LZString.compressToEncodedURIComponent(JSON.stringify({v:1,e:0,d:data}));
+        callback(base + '#n=' + packed);
+      }
+    }
+
+    function shorten(url, cbOk, cbErr){
+      var api = 'https://is.gd/create.php?format=json&url=' + encodeURIComponent(url) + '&logstats=1';
+      fetch(api).then(function(res){
+        if(!res.ok) throw new Error('Không gọi được API is.gd');
+        return res.json();
+      }).then(function(j){ if(j.shorturl) cbOk(j.shorturl); else throw new Error(j.errormessage || 'Rút gọn link thất bại'); })
+        .catch(function(e){ if(cbErr) cbErr(e); });
+    }
+
+    function makeQR(url){ var qr = 'https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=' + encodeURIComponent(url); qrImg.src = qr; qrImg.dataset.url = url; }
+    function download(dataUrl, filename){ var a=document.createElement('a'); a.href=dataUrl; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); }
+    function textToDataURL(text, mime){ if(!mime) mime='text/plain'; return 'data:'+mime+';charset=utf-8,' + encodeURIComponent(text); }
+
+    // ======= Actions =======
+    if(saveBtn){ saveBtn.addEventListener('click', function(){
+      if(!(noteEl.value||'').trim() && !(titleEl.value||'').trim()){ showMsg('Vui lòng nhập nội dung hoặc tiêu đề.'); return; }
+      if(requirePwEl.checked && !(passwordEl.value||'').trim()){ showMsg('Hãy nhập mật khẩu hoặc bỏ chọn yêu cầu mật khẩu.'); return; }
+      saveBtn.disabled = true; saveBtn.textContent = 'Đang tạo…';
+      buildLongURL(function(longURL){
+        longLinkEl.value = longURL;
+        if(longURL.length > 6000) showMsg('Cảnh báo: URL khá dài, có thể không tương thích ở một số nơi.','error');
+        shorten(longURL, function(shortURL){
+          shortLinkEl.value = shortURL; makeQR(shortURL);
+          if(navigator && navigator.share){ shareBtn.classList.remove('hidden'); } else { shareBtn.classList.add('hidden'); }
+          showMsg('Đã tạo link!', 'success');
+          saveBtn.disabled = false; saveBtn.textContent = '💾 Lưu & tạo link + QR';
+        }, function(err){ showMsg('Lỗi rút gọn: ' + (err.message||err)); saveBtn.disabled=false; saveBtn.textContent='💾 Lưu & tạo link + QR'; });
+      });
+    }); }
+
+    if(copyBtn){ copyBtn.addEventListener('click', function(){ if(!shortLinkEl.value) return; navigator.clipboard.writeText(shortLinkEl.value).then(function(){ showMsg('Đã sao chép link!', 'success'); }); }); }
+    if(copyLongBtn){ copyLongBtn.addEventListener('click', function(){ if(!longLinkEl.value) return; navigator.clipboard.writeText(longLinkEl.value).then(function(){ showMsg('Đã copy URL!', 'success'); }); }); }
+    if(openLongBtn){ openLongBtn.addEventListener('click', function(){ if(longLinkEl.value) window.open(longLinkEl.value,'_blank'); }); }
+
+    if(downloadQRBtn){ downloadQRBtn.addEventListener('click', function(){ if(!qrImg.src) return; try{ var img=new Image(); img.crossOrigin='anonymous'; img.src=qrImg.src; img.onload=function(){ var c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight; c.getContext('2d').drawImage(img,0,0); download(c.toDataURL('image/png'),'note-qr.png'); }; }catch(e){ download(qrImg.src,'note-qr.png'); } }); }
+
+    if(downloadTxtBtn){ downloadTxtBtn.addEventListener('click', function(){ var title=(titleEl.value||'note').replace(/[^\p{L}\p{N}\-_ ]/gu,'').trim()||'note'; download(textToDataURL(noteEl.value), title+'.txt'); }); }
+
+    var clearBtnEl = document.querySelector('#clearBtn');
+    if(clearBtnEl){ clearBtnEl.addEventListener('click', function(){ titleEl.value=''; noteEl.value=''; updateStats(); updatePreview(); shortLinkEl.value=''; qrImg.removeAttribute('src'); longLinkEl.value=''; passwordEl.value=''; requirePwEl.checked=false; localStorage.removeItem('noteDraft'); localStorage.removeItem('noteTitle'); history.replaceState(null,'',location.pathname); }); }
+
+    if(resetLink){ resetLink.addEventListener('click', function(e){ e.preventDefault(); titleEl.value=''; noteEl.value=''; updateStats(); updatePreview(); shortLinkEl.value=''; qrImg.removeAttribute('src'); longLinkEl.value=''; passwordEl.value=''; requirePwEl.checked=false; history.replaceState(null,'',location.pathname); titleEl.disabled=false; noteEl.disabled=false; editorActions.classList.remove('hidden'); decryptBox.classList.add('hidden'); }); }
+
+    if(shareBtn){ shareBtn.addEventListener('click', function(){ if(!shortLinkEl.value || !(navigator && navigator.share)) return; navigator.share({ title: titleEl.value || 'Ghi chú', text: 'Xem ghi chú của tôi', url: shortLinkEl.value }).catch(function(){}); }); }
+
+    // ======= Tải từ URL hash & chế độ chỉ xem =======
+    function tryLoadFromHash(){
+      var h = location.hash;
+      if(h && h.indexOf('#n=')===0){
+        titleEl.disabled = true; noteEl.disabled = true; editorActions.classList.add('hidden');
+        var payload = decodeURIComponent(h.slice(3));
+        // Kiểu JSON (có e=1 tức là mã hoá compat)
+        if(payload && payload.charAt(0)==='{'){
+          try{
+            var pkg = JSON.parse(payload);
+            if(pkg.e===1 && pkg.a==='cbc'){
+              decryptBox.classList.remove('hidden');
+              decryptBtn.onclick = function(){
+                decMsg.textContent='';
+                try{ var obj = decryptCompat(pkg, (viewPwEl.value||'')); titleEl.value=obj.t||''; noteEl.value=obj.n||''; updateStats(); updatePreview(); decryptBox.classList.add('hidden'); }
+                catch(err){ decMsg.textContent='Mật khẩu sai hoặc dữ liệu hỏng.'; }
+              };
+            } else {
+              var obj = pkg.d || {t:'', n:''}; titleEl.value=obj.t||''; noteEl.value=obj.n||''; updateStats(); updatePreview();
+            }
+          }catch(e){
+            // Có thể là chuỗi nén LZ
+            try{ var parsed = JSON.parse(LZString.decompressFromEncodedURIComponent(payload) || '{}'); var obj2 = parsed.d || parsed; titleEl.value=obj2.t||''; noteEl.value=obj2.n||''; updateStats(); updatePreview(); } catch(err){ showMsg('Không giải được dữ liệu trong URL.'); }
+          }
+        } else {
+          // Chuỗi nén LZ
+          try{ var parsed2 = JSON.parse(LZString.decompressFromEncodedURIComponent(payload) || '{}'); var obj3 = parsed2.d || parsed2; titleEl.value=obj3.t||''; noteEl.value=obj3.n||''; updateStats(); updatePreview(); } catch(err){ showMsg('Không giải được dữ liệu trong URL.'); }
+        }
+      } else {
+        // không có hash: phục hồi bản nháp
+        titleEl.value = localStorage.getItem('noteTitle') || '';
+        noteEl.value = localStorage.getItem('noteDraft') || '';
+        updateStats(); updatePreview();
+      }
+    }
+
+    // ======= Auto-save =======
+    function autosave(){ localStorage.setItem('noteDraft', noteEl.value); localStorage.setItem('noteTitle', titleEl.value); }
+    titleEl.addEventListener('input', function(){ autosave(); updatePreview(); });
+    noteEl.addEventListener('input', function(){ updateStats(); autosave(); updatePreview(); });
+
+    // Init
+    (function init(){ tryLoadFromHash(); })();
+  </script>
+</body>
+</html>
